@@ -10,21 +10,35 @@
   ((result-type :init-keyword :arg)
    (result :init-value '())))
 
-(define (normalize expr)
+(define (normalize-1 expr)
   (let ((subx '()))
-    (define n1
-      (cut regexp-replace-all #/[\['](\??\(.*?\))[\]']/
-           <>
-           (^m (push! subx (m 1)) #`"[#,(- (length subx) 1)]")))
-    (define n2 (cut regexp-replace-all #/'?\.'?|\['?/ <> ";"))
-    (define n3 (cut regexp-replace-all #/;;;|;;/ <> ";..;"))
-    (define n4 (cut regexp-replace-all #/;$|'?\]|'$/ <> ""))
+    (values
+     (regexp-replace-all #/[\['](\??\(.*?\))[\]']/
+       expr
+       (^m (push! subx (m 1)) #`"[#,(- (length subx) 1)]"))
+     subx)))
 
-    (let* ((r ((compose n4 n3 n2 n1) expr))
-           (subx (reverse! subx)))
-      (regexp-replace-all #/#([0-9]+)/
-        r
-        (^m (~ subx (string->number (m 1))))))))
+(define (normalize-2 expr)
+  (regexp-replace-all #/'?\.'?|\['?/ expr ";"))
+
+(define (normalize-3 expr)
+  (regexp-replace-all #/;;;|;;/ expr ";..;"))
+
+(define (normalize-4 expr)
+  (regexp-replace-all #/;$|'?\]|'$/ expr ""))
+
+(define (normalize-5 expr subx)
+  (regexp-replace-all #/#([0-9]+)/
+    expr
+    (^m (list-ref subx (string->number (m 1))))))
+
+(define (normalize-6 expr)
+  (regexp-replace #/^\$;/ expr ""))
+
+(define (normalize expr)
+  (receive (expr subx) (normalize-1 expr)
+    (let1 r ((compose normalize-4 normalize-3 normalize-2) expr)
+      (normalize-6 (normalize-5 r subx)))))
 
 (define (asPath path)
   (let1 x (string-split path #\;)
@@ -36,8 +50,8 @@
         x)))))
 
 (define-method store ((self <json-path>) (p <string>) v)
-  (when p (push! (~ self 'result)
-                 (if (eq? (~ self 'result-type) 'path) (asPath p) v)))
+  (when p (push! (slot-ref self 'result)
+                 (if (eq? (slot-ref self 'result-type) 'path) (asPath p) v)))
   (not (not p)))
 
 (define (chop-head str)
@@ -59,6 +73,29 @@
 (define-method json-ref (vec key)
   #f)
 
+(define-method recursive-trace ((self <json-path>) (expr <string>) val (loc <string>) (path <string>))
+  (trace self expr val path)
+  (walk loc expr val path
+        (^(m l x v p)
+          (and (or (list? (json-ref v m)) (vector? (json-ref v m)))
+               (trace self #`"..;,|expr|" (json-ref v m) #`",|p|;,|m|")))))
+
+(define-method expression-trace ((self <json-path>) (expr <string>) val (loc <string>) (path <string>))
+  (trace self
+         (let1 t (evaluation loc val (string-scan path #\; 'after))
+           #`",|t|;,|expr|")
+         val
+         path))
+
+(define-method filter-trace ((self <json-path>) (expr <string>) val (loc <string>) (path <string>))
+  (walk loc expr val path
+        (^(m l x v p)
+          (if (evaluation
+               (regexp-replace #/^\?\((.*?)\)$/ l "(\\1)")
+               (json-ref v m)
+               m)
+              (trace self #`",|m|;,|x|" v p)))))
+  
 (define-method trace ((self <json-path>) (expr <string>) val (path <string>))
   (if (string-null? expr)
       (store self path val)
@@ -71,29 +108,15 @@
               ((and (string? loc) (string=? loc "*"))
                (walk loc x val path
                      (^(m l x v p) (trace self #`",|m|;,|x|" v p))))
-              ((and (string? loc) (string=? loc ".."))
-               (trace self x val path)
-               (walk loc x val path
-                     (^(m l x v p)
-                       (and (or (list? (json-ref v m)) (vector? (json-ref v m)))
-                            (trace self #`"..;,|x|" (json-ref v m) #`",|p|;,|m|")))))
+              ((string=? loc "..")
+               (recursive-trace self x val loc path))
               ((#/,/ loc)
                (let1 s (string-split loc #/'?,'?/)
                  (for-each (^t (trace self #`",|t|;,|x|" val path)) s)))
               ((#/^\(.*?\)$/ loc)
-               (trace self
-                      (let1 t (evaluation loc val (string-scan path #\; 'after))
-                        #`",|t|;,|x|")
-                        val
-                        path))
+               (expression-trace self x val loc path))
               ((#/^\?\(.*?\)$/ loc)
-               (walk loc x val path
-                     (^(m l x v p)
-                       (if (evaluation
-                            (regexp-replace #/^\?\((.*?)\)$/ l "(\\1)")
-                            (json-ref v m)
-                            m)
-                           (trace self #`",|m|;,|x|" v p)))))
+               (filter-trace self x val loc path))
               ((#/^(-?[0-9]*):(-?[0-9]*):?([0-9]*)$/ loc)
                (slice self loc x val path))))))
 
@@ -127,6 +150,5 @@
 
 (define (json-path obj expr :optional (arg 'value))
   (let1 jp (make <json-path> :arg arg)
-    (trace jp (regexp-replace #/^\$;/ (normalize expr) "") obj "$")
-    (if (null? (~ jp 'result)) #f (reverse! (~ jp 'result)))))
-
+    (trace jp (normalize expr) obj "$")
+    (if (null? (slot-ref jp 'result)) #f (reverse! (slot-ref jp 'result)))))
