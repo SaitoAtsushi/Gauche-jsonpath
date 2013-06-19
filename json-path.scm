@@ -1,5 +1,6 @@
 
 (define-module json-path
+  (use srfi-1)
   (use srfi-13)
   (use gauche.sequence)
   (export json-path json-ref))
@@ -38,7 +39,7 @@
 (define (normalize expr)
   (receive (expr subx) (normalize-1 expr)
     (let1 r ((compose normalize-4 normalize-3 normalize-2) expr)
-      (normalize-6 (normalize-5 r subx)))))
+      (string-split (normalize-6 (normalize-5 r subx)) #\;))))
 
 (define (asPath path)
   (let1 x (string-split path #\;)
@@ -54,18 +55,11 @@
                  (if (eq? (slot-ref self 'result-type) 'path) (asPath p) v)))
   (not (not p)))
 
-(define (chop-head str)
-  (receive (head tail)
-      (string-scan str ";" 'both)
-    (if (and (not head) (not tail))
-        (values str "")
-        (values head tail))))
-
 (define-method json-ref ((lst <list>) (key <string>))
   (assoc-ref lst key))
 
 (define-method json-ref ((vec <vector>) (key <string>))
-  (vector-ref vec (string->number key)))
+  (json-ref vec (string->number key)))
 
 (define-method json-ref ((vec <vector>) (key <integer>))
   (vector-ref vec key))
@@ -73,46 +67,45 @@
 (define-method json-ref (vec key)
   #f)
 
-(define-method recursive-trace ((self <json-path>) (expr <string>) val (loc <string>) (path <string>))
+(define-method recursive-trace ((self <json-path>) (expr <list>) val (loc <string>) (path <string>))
   (trace self expr val path)
   (walk loc expr val path
         (^(m l x v p)
           (and (or (list? (json-ref v m)) (vector? (json-ref v m)))
-               (trace self #`"..;,|expr|" (json-ref v m) #`",|p|;,|m|")))))
+               (trace self (cons ".." expr) (json-ref v m) #`",|p|;,|m|")))))
 
-(define-method expression-trace ((self <json-path>) (expr <string>) val (loc <string>) (path <string>))
+(define-method expression-trace ((self <json-path>) (expr <list>) val (loc <string>) (path <string>))
   (trace self
-         (let1 t (evaluation loc val (string-scan path #\; 'after))
-           #`",|t|;,|expr|")
+         (cons (x->string (evaluation loc val (string-scan path #\; 'after))) expr)
          val
          path))
 
-(define-method filter-trace ((self <json-path>) (expr <string>) val (loc <string>) (path <string>))
+(define-method filter-trace ((self <json-path>) (expr <list>) val (loc <string>) (path <string>))
   (walk loc expr val path
         (^(m l x v p)
           (if (evaluation
                (regexp-replace #/^\?\((.*?)\)$/ l "(\\1)")
                (json-ref v m)
                m)
-              (trace self #`",|m|;,|x|" v p)))))
+              (trace self (cons m x) v p)))))
   
-(define-method trace ((self <json-path>) (expr <string>) val (path <string>))
-  (if (string-null? expr)
+(define-method trace ((self <json-path>) (expr <list>) val (path <string>))
+  (if (null? expr)
       (store self path val)
       (receive (loc x)
-          (chop-head expr)
+          (car+cdr expr)
         (cond ((and (list? val) (assoc loc val))
                (trace self x (json-ref val loc) #`",|path|;,|loc|"))
               ((and (vector? val) (string->number loc))
                (trace self x (json-ref val loc) #`",|path|;,|loc|"))
               ((and (string? loc) (string=? loc "*"))
                (walk loc x val path
-                     (^(m l x v p) (trace self #`",|m|;,|x|" v p))))
+                     (^(m l x v p) (trace self (cons m x) v p))))
               ((string=? loc "..")
                (recursive-trace self x val loc path))
               ((#/,/ loc)
                (let1 s (string-split loc #/'?,'?/)
-                 (for-each (^t (trace self #`",|t|;,|x|" val path)) s)))
+                 (for-each (^t (trace self (cons t x) val path)) s)))
               ((#/^\(.*?\)$/ loc)
                (expression-trace self x val loc path))
               ((#/^\?\(.*?\)$/ loc)
@@ -143,7 +136,7 @@
                                (min len end))))
                   (do ((i start (+ i 1)))
                       ((= i end))
-                    (trace self #`",|i|;,|expr|" val path)))))))))
+                    (trace self (cons (number->string i) expr) val path)))))))))
 
 (define (evaluation x v vname)
   (eval `(let ((@ ',v)) ,(read-from-string x)) (interaction-environment)))
