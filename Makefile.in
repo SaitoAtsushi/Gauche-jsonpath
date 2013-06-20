@@ -22,7 +22,7 @@ LOCAL_PATHS = "@LOCAL_PATHS@"
 # Module-specific stuff
 PACKAGE   = Gauche-jsonpath
 
-SCMFILES  = $(srcdir)/json-path.scm
+SCMFILES  = $(srcdir)/sjsonpath.scm
 
 GENERATED =
 CONFIG_GENERATED = Makefile config.cache config.log config.status \

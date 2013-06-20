@@ -5,16 +5,16 @@
 (use gauche.test)
 (use rfc.json)
 
-(test-start "json-path")
-(use json-path)
-(test-module 'json-path)
+(test-start "sjsonpath")
+(use sjsonpath)
+(test-module 'sjsonpath)
 
 (define test-object-1
   (parse-json-string "{ \"a\": \"a\", \"b\": \"b\", \"c d\": \"e\" }"))
 
 (test* "request elements to simple object."
        '(("a") ("a") ("e") ("a" "b" "e") ("a" "b" "e") ("a" "b" "e"))
-       (map (lambda(x) (json-path test-object-1 x))
+       (map (lambda(x) ((sjsonpath x) test-object-1))
             '("$.a" "$['a']" "$.'c d'" "$.*" "$['*']" "$[*]")))
 
 (define test-object-2
@@ -22,7 +22,7 @@
 
 (test* "request elements to simple array."
        '((1) (null) (1 "2" 3.14 true null) (null))
-       (map (lambda(x) (json-path test-object-2 x))
+       (map (lambda(x) ((sjsonpath x) test-object-2))
             '("$[0]" "$[4]" "$[*]" "$[-1:]")))
 
 (define test-object-3
@@ -43,7 +43,7 @@
          ("i3")
          ("i2" "i5")
          ("i6"))
-       (map (lambda(x) (json-path test-object-3 x))
+       (map (lambda(x) ((sjsonpath x) test-object-3))
             '("$.points[1]"
               "$.points[4].x"
               "$.points[?(equal? (assoc-ref @ \"id\" #f) \"i4\")].x"
@@ -103,7 +103,7 @@
           (("id" . "Help"))
           (("id" . "About") ("label" . "About Adobe CVG Viewer...")))
          ((("id" . "Open"))))
-       (map (lambda(x) (json-path test-object-4 x))
+       (map (lambda(x) ((sjsonpath x) test-object-4))
             '("$.menu.items[?(and (not (eq? @ 'null)) (assoc-ref @ \"id\") (not (assoc-ref @ \"label\")))].id"
               "$.menu.items[?(and (not (eq? @ 'null)) (assoc-ref @ \"label\") (#/SVG/ (assoc-ref @ \"label\")))].id"
               "$.menu.items[?(not (eq? @ 'null))]"
@@ -114,7 +114,7 @@
  
 (test* "request elements recursively to nested object."
        '((1 5) (4 8) (2 4 6 8))
-       (map (lambda(x) (json-path test-object-5 x))
+       (map (lambda(x) ((sjsonpath x) test-object-5))
             '("$..[0]"
             "$..[-1:]"
             "$..[?(and (not (list? @)) (not (vector? @)) (= (modulo @ 2) 0))]")))
@@ -129,7 +129,7 @@
 
 (test* "request elements by union operator."
        '((2 5 2) ("red" "blue") ("red" "green"))
-       (map (lambda(x) (json-path test-object-6 x))
+       (map (lambda(x) ((sjsonpath x) test-object-6))
             '("$.'?(json-ref @ \"color\")'.x"
               "$['lin','cir'].color"
               "$['lin','arc'].color")))
@@ -139,7 +139,7 @@
 
 (test* "request elements by predicate of s-expression."
        '(("world2.0") ("hello"))
-       (map (lambda(x) (json-path test-object-7 x))
+       (map (lambda(x) ((sjsonpath x) test-object-7))
             '("$.text[?(> (string-length @) 5)]"
               "$.text[?(char=? (string-ref @ 0) #\\h)]")))
 
@@ -152,6 +152,6 @@
 
 (test* "request elements that be named \"a\" recursively."
        '((("a" . 2) ("b" . 3)) 2 4 (("a" . 6) ("b" . 7)) 6)
-       (json-path test-object-8 "$..a"))
+       ((sjsonpath "$..a") test-object-8))
 
 (test-end :exit-on-failure #t)
