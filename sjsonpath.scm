@@ -143,7 +143,7 @@
             (('slice start end step)
              (slice self start end step x val path))
             ((? procedure? e)
-             (lambda-filter-trace self expr val e path))
+             (lambda-filter-trace self x val e path))
             ((? (^x (and (number? x) (vector? val) )) e)
              (trace self x (vector-ref val e #f) #`",|path|;,|loc|"))
             (e (trace self x (json-ref val e) #`",|path|;,|loc|")))))))

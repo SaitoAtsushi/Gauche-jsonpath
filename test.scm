@@ -52,6 +52,20 @@
               "$.points[?(assoc-ref @ \"z\")].id"
               "$.points[(- (vector-length @) 1)].id")))
 
+(test* "lambda filter"
+       '("i3")
+       ((sjsonpath
+        `("points"
+          ,(lambda(node root vars)
+             (and (list? node)
+                  (> (+ (* (assoc-ref node "x" 0)
+                           (assoc-ref node "x" 0))
+                        (* (assoc-ref node "y")
+                           (assoc-ref node "y")))
+                     50)))
+          "id"))
+        test-object-3))
+
 (define test-object-4
   (parse-json-string "{ \"menu\": {
     \"header\": \"SVG Viewer\",
